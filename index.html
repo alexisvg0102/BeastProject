@@ -162,6 +162,8 @@ label{font-size:11px;font-weight:600;color:var(--mu);display:block;margin-bottom
 .ex-name-input:focus{outline:none}
 .ex-body{padding:10px 14px 12px}
 .set-row{display:grid;grid-template-columns:26px 1fr 1fr 52px 28px;gap:6px;align-items:center;margin-bottom:6px}
+.set-row.cardio{grid-template-columns:26px 1fr 80px 28px}
+.set-labels.cardio{grid-template-columns:26px 1fr 80px 28px}
 .set-num{font-size:11px;color:var(--mu);text-align:center;font-family:'Syne',sans-serif;font-weight:700}
 .set-input{background:var(--s3);border:1px solid var(--b3);color:var(--w);padding:8px;font-size:14px;border-radius:8px;text-align:center;font-family:'DM Sans',sans-serif;-webkit-appearance:none}
 .set-input:focus{border-color:var(--ac);outline:none}
@@ -314,6 +316,8 @@ label{font-size:11px;font-weight:600;color:var(--mu);display:block;margin-bottom
 .week-day.today .wd-num{color:var(--ac)}
 .prev-ref{background:var(--s3);border-radius:8px;padding:6px 10px;font-size:11px;color:var(--mu);margin-bottom:8px;font-family:'Syne',sans-serif}
 .prev-ref strong{color:var(--t)}
+input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+input[type=number]{-moz-appearance:textfield}
 </style>
 </head>
 <body>
@@ -336,9 +340,6 @@ label{font-size:11px;font-weight:600;color:var(--mu);display:block;margin-bottom
       </label>
     </div>
     <div class="field"><label>Tu nombre</label><input type="text" id="np-name" placeholder="Ej: Carlos, Ana..." maxlength="20"></div>
-    <div class="field"><label>Elige un PIN de 4 dígitos</label>
-      <input type="password" id="np-pin" inputmode="numeric" maxlength="4" placeholder="••••" style="letter-spacing:8px;font-size:22px;text-align:center;font-family:'Syne',sans-serif">
-    </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px">
       <button class="btn btn-ghost" onclick="hideNewProfileForm()">Cancelar</button>
       <button class="btn btn-primary" onclick="createProfile()">Crear perfil</button>
@@ -534,6 +535,20 @@ label{font-size:11px;font-weight:600;color:var(--mu);display:block;margin-bottom
   <div class="card card-p" id="weight-chart-wrap">
     <div class="empty-state"><div class="emoji">📊</div><p>Añade medidas de peso para ver la evolución</p></div>
   </div>
+
+  <!-- Cardio progress -->
+  <div class="section-title">Progresión cardio</div>
+  <div class="card card-p" style="margin-bottom:10px">
+    <label>Selecciona actividad</label>
+    <select id="cardio-select" onchange="renderCardioProgress()">
+      <option value="">— Elige actividad —</option>
+      <option value="Natación · Series">🏊 Natación · Series</option>
+      <option value="Natación · Tirada larga">🏊 Natación · Tirada larga</option>
+      <option value="Carrera · Series">🏃 Carrera · Series</option>
+      <option value="Carrera · Tirada larga">🏃 Carrera · Tirada larga</option>
+    </select>
+  </div>
+  <div id="cardio-progress-area"></div>
 
   <!-- Exercise progress -->
   <div class="section-title">Progresión de cargas</div>
@@ -899,10 +914,7 @@ function hideNewProfileForm(){
 
 function createProfile(){
   const name = document.getElementById('np-name').value.trim();
-  const pin  = document.getElementById('np-pin').value.trim();
   if(!name){ showToast('Escribe tu nombre'); return; }
-  if(pin.length !== 4 || !/^\d{4}$/.test(pin)){ showToast('El PIN debe tener 4 dígitos'); return; }
-
   const store = getProfiles();
   const idx = store.profiles.length;
   const id = 'u' + Date.now();
@@ -910,14 +922,12 @@ function createProfile(){
   const photo = photoEl.dataset.photo || null;
   store.profiles.push({
     id, name,
-    pin: hashPin(pin),
     color: AVATAR_COLORS[idx % AVATAR_COLORS.length],
     emoji: AVATAR_EMOJIS[idx % AVATAR_EMOJIS.length],
     photo
   });
   saveProfiles(store);
   document.getElementById('np-name').value = '';
-  document.getElementById('np-pin').value = '';
   document.getElementById('np-photo-preview').innerHTML = '📷';
   delete document.getElementById('np-photo-preview').dataset.photo;
   document.getElementById('np-photo').value = '';
@@ -975,12 +985,7 @@ let _pinTarget = null;
 let _pinBuffer = '';
 
 function selectProfile(profile){
-  _pinTarget  = profile;
-  _pinBuffer  = '';
-  document.getElementById('pin-title').textContent = 'Hola, ' + profile.name;
-  document.getElementById('pin-error').textContent = '';
-  updatePinDots();
-  document.getElementById('pin-screen').classList.add('open');
+  enterApp(profile);
 }
 
 function pinInput(digit){
@@ -1147,7 +1152,8 @@ const DEFAULT_SESSIONS = [
     { name:'Tríceps', exercises:['Extensión overhead cable','Fondos banco'] },
   ]},
   { id:'s5', name:'Cardio', day:5, color:'#f97316', groups:[
-    { name:'Cardio', exercises:['Natación / Carrera'] },
+    { name:'Natación', exercises:['Natación · Series','Natación · Tirada larga'] },
+    { name:'Carrera',  exercises:['Carrera · Series','Carrera · Tirada larga'] },
   ]},
 ];
 
@@ -1201,7 +1207,7 @@ function goPage(p){
   if(p==='today') renderToday();
   if(p==='workout') renderWorkoutPage();
   if(p==='measures') renderMeasures();
-  if(p==='progress') renderProgress();
+  if(p==='progress'){ renderProgress(); renderCardioProgress(); }
   if(p==='guide') renderGuide();
   if(p==='settings') renderSettings();
 }
@@ -1320,159 +1326,184 @@ function setDayType(t){ const l=getLog(viewDate); l.dayType=t; saveData(); rende
 
 // ── MEALS & FOOD TRACKER ──
 const FOOD_DB = [
+  // Cada alimento tiene: n=nombre, kcal/p/c/f por 100g o por unidad base, u=unidad, ref=gramos por unidad (para conversión)
+  // Si ref está definido: macros son POR UNIDAD. Si no: macros son por 100g/ml.
+
   // ── CARNES Y AVES ──
-  {n:'Pechuga de pollo',         kcal:165, p:31,   c:0,    f:3.6,  u:'g'},
-  {n:'Muslo de pollo sin piel',  kcal:179, p:24.9, c:0,    f:8.2,  u:'g'},
-  {n:'Pollo entero asado',       kcal:215, p:22,   c:0,    f:13,   u:'g'},
-  {n:'Pechuga de pavo',          kcal:135, p:29,   c:0,    f:1.5,  u:'g'},
-  {n:'Ternera magra',            kcal:180, p:26,   c:0,    f:8,    u:'g'},
-  {n:'Ternera picada (5% grasa)',kcal:152, p:21.4, c:0,    f:7.1,  u:'g'},
-  {n:'Solomillo de ternera',     kcal:158, p:26.1, c:0,    f:5.3,  u:'g'},
-  {n:'Lomo de cerdo',            kcal:190, p:27,   c:0,    f:9,    u:'g'},
-  {n:'Jamón serrano',            kcal:241, p:30.5, c:0.5,  f:13,   u:'g'},
-  {n:'Jamón York',               kcal:107, p:18,   c:1,    f:3.3,  u:'g'},
-  {n:'Pavo en fiambre',          kcal:98,  p:19,   c:0.9,  f:1.8,  u:'g'},
-  {n:'Chorizo',                  kcal:455, p:24.1, c:1.9,  f:38.9, u:'g'},
-  {n:'Salchichas de pollo',      kcal:150, p:14,   c:2.5,  f:9.5,  u:'g'},
+  {n:'Pechuga de pollo',          kcal:165, p:31,   c:0,    f:3.6,  u:'g'},
+  {n:'Muslo de pollo sin piel',   kcal:179, p:24.9, c:0,    f:8.2,  u:'g'},
+  {n:'Pollo entero asado',        kcal:215, p:22,   c:0,    f:13,   u:'g'},
+  {n:'Pechuga de pavo',           kcal:135, p:29,   c:0,    f:1.5,  u:'g'},
+  {n:'Ternera magra',             kcal:180, p:26,   c:0,    f:8,    u:'g'},
+  {n:'Ternera picada 5%',         kcal:152, p:21.4, c:0,    f:7.1,  u:'g'},
+  {n:'Solomillo de ternera',      kcal:158, p:26.1, c:0,    f:5.3,  u:'g'},
+  {n:'Lomo de cerdo',             kcal:190, p:27,   c:0,    f:9,    u:'g'},
+  {n:'Jamón serrano',             kcal:241, p:30.5, c:0.5,  f:13,   u:'g'},
+  {n:'Jamón York',                kcal:107, p:18,   c:1,    f:3.3,  u:'g'},
+  {n:'Pavo fiambre',              kcal:98,  p:19,   c:0.9,  f:1.8,  u:'g'},
+  {n:'Chorizo',                   kcal:455, p:24.1, c:1.9,  f:38.9, u:'g'},
+  {n:'Salchichas de pollo',       kcal:150, p:14,   c:2.5,  f:9.5,  u:'g'},
   // ── PESCADOS Y MARISCOS ──
-  {n:'Salmón',                   kcal:208, p:20,   c:0,    f:13,   u:'g'},
-  {n:'Salmón ahumado',           kcal:172, p:18.3, c:0,    f:10.5, u:'g'},
-  {n:'Atún en lata (agua)',      kcal:116, p:26,   c:0,    f:1,    u:'g'},
-  {n:'Atún fresco',              kcal:144, p:23.3, c:0,    f:5.1,  u:'g'},
-  {n:'Merluza',                  kcal:82,  p:17,   c:0,    f:1.5,  u:'g'},
-  {n:'Bacalao',                  kcal:82,  p:17.8, c:0,    f:0.7,  u:'g'},
-  {n:'Dorada',                   kcal:96,  p:18,   c:0,    f:2.5,  u:'g'},
-  {n:'Lubina',                   kcal:97,  p:18.4, c:0,    f:2.5,  u:'g'},
-  {n:'Caballa',                  kcal:205, p:18.6, c:0,    f:13.9, u:'g'},
-  {n:'Sardinas en lata',         kcal:208, p:24.6, c:0,    f:11.5, u:'g'},
-  {n:'Gambas',                   kcal:99,  p:21,   c:0.9,  f:1.1,  u:'g'},
-  {n:'Mejillones',               kcal:86,  p:11.9, c:3.7,  f:2.2,  u:'g'},
-  {n:'Calamar',                  kcal:92,  p:15.6, c:3.1,  f:1.4,  u:'g'},
-  // ── HUEVOS Y LÁCTEOS ──
-  {n:'Huevo entero (L)',         kcal:155, p:13,   c:1.1,  f:11,   u:'g'},
-  {n:'Clara de huevo',           kcal:52,  p:11,   c:0.7,  f:0.2,  u:'g'},
-  {n:'Yema de huevo',            kcal:322, p:15.9, c:3.6,  f:26.5, u:'g'},
-  {n:'Leche entera',             kcal:61,  p:3.2,  c:4.8,  f:3.3,  u:'ml'},
-  {n:'Leche semidesnatada',      kcal:46,  p:3.3,  c:4.7,  f:1.6,  u:'ml'},
-  {n:'Leche desnatada',          kcal:35,  p:3.4,  c:5,    f:0.1,  u:'ml'},
-  {n:'Leche vegetal avena',      kcal:44,  p:1.1,  c:6.5,  f:1.5,  u:'ml'},
-  {n:'Leche vegetal almendra',   kcal:22,  p:0.6,  c:2.3,  f:1.2,  u:'ml'},
-  {n:'Yogur natural',            kcal:61,  p:3.5,  c:4.7,  f:3.3,  u:'g'},
-  {n:'Yogur griego 0%',          kcal:57,  p:10,   c:3.7,  f:0.4,  u:'g'},
-  {n:'Yogur griego entero',      kcal:97,  p:9,    c:3.6,  f:5,    u:'g'},
-  {n:'Queso cottage',            kcal:98,  p:11,   c:3.4,  f:4.3,  u:'g'},
-  {n:'Requesón',                 kcal:74,  p:12,   c:3,    f:1,    u:'g'},
-  {n:'Queso mozzarella',         kcal:280, p:28,   c:3.1,  f:17,   u:'g'},
-  {n:'Queso manchego curado',    kcal:392, p:31.7, c:0.5,  f:29.8, u:'g'},
-  {n:'Queso cheddar',            kcal:403, p:24.9, c:1.3,  f:33.1, u:'g'},
-  {n:'Queso philadelphia',       kcal:257, p:5.9,  c:4.1,  f:24,   u:'g'},
-  {n:'Proteína whey',            kcal:400, p:80,   c:6,    f:4,    u:'g'},
-  {n:'Proteína caseína',         kcal:370, p:78,   c:5,    f:2,    u:'g'},
-  // ── CEREALES Y FARINÁCEOS ──
-  {n:'Avena cruda',              kcal:389, p:17,   c:66,   f:7,    u:'g'},
-  {n:'Arroz blanco crudo',       kcal:365, p:7,    c:80,   f:0.7,  u:'g'},
-  {n:'Arroz blanco cocido',      kcal:130, p:2.7,  c:28,   f:0.3,  u:'g'},
-  {n:'Arroz integral crudo',     kcal:362, p:7.5,  c:76,   f:2.7,  u:'g'},
-  {n:'Arroz integral cocido',    kcal:111, p:2.6,  c:23,   f:0.9,  u:'g'},
-  {n:'Pasta cruda',              kcal:371, p:13,   c:74,   f:1.5,  u:'g'},
-  {n:'Pasta cocida',             kcal:131, p:5,    c:25,   f:1.1,  u:'g'},
-  {n:'Pan blanco',               kcal:265, p:9,    c:49,   f:3.2,  u:'g'},
-  {n:'Pan integral',             kcal:247, p:13,   c:41,   f:4.2,  u:'g'},
-  {n:'Tostada pan integral',     kcal:260, p:9,    c:46,   f:4.4,  u:'g'},
-  {n:'Tortilla de trigo (wraps)',kcal:306, p:8.2,  c:49.9, f:8.3,  u:'g'},
-  {n:'Cuscús cocido',            kcal:112, p:3.8,  c:23,   f:0.2,  u:'g'},
-  {n:'Quinoa cocida',            kcal:120, p:4.4,  c:21.3, f:1.9,  u:'g'},
-  {n:'Maíz cocido',              kcal:96,  p:3.4,  c:21,   f:1.5,  u:'g'},
-  {n:'Copos de maíz (corn flakes)',kcal:357,p:7.5, c:84,   f:0.9,  u:'g'},
-  {n:'Granola',                  kcal:471, p:10,   c:64,   f:20,   u:'g'},
-  {n:'Galletas María',           kcal:450, p:7.4,  c:73,   f:13.9, u:'g'},
-  {n:'Galletas de avena',        kcal:430, p:7,    c:65,   f:16,   u:'g'},
+  {n:'Salmón',                    kcal:208, p:20,   c:0,    f:13,   u:'g'},
+  {n:'Salmón ahumado',            kcal:172, p:18.3, c:0,    f:10.5, u:'g'},
+  {n:'Atún lata (agua)',          kcal:116, p:26,   c:0,    f:1,    u:'g'},
+  {n:'Atún fresco',               kcal:144, p:23.3, c:0,    f:5.1,  u:'g'},
+  {n:'Merluza',                   kcal:82,  p:17,   c:0,    f:1.5,  u:'g'},
+  {n:'Bacalao',                   kcal:82,  p:17.8, c:0,    f:0.7,  u:'g'},
+  {n:'Dorada',                    kcal:96,  p:18,   c:0,    f:2.5,  u:'g'},
+  {n:'Lubina',                    kcal:97,  p:18.4, c:0,    f:2.5,  u:'g'},
+  {n:'Caballa',                   kcal:205, p:18.6, c:0,    f:13.9, u:'g'},
+  {n:'Sardinas en lata',          kcal:208, p:24.6, c:0,    f:11.5, u:'g'},
+  {n:'Gambas',                    kcal:99,  p:21,   c:0.9,  f:1.1,  u:'g'},
+  {n:'Mejillones',                kcal:86,  p:11.9, c:3.7,  f:2.2,  u:'g'},
+  {n:'Calamar',                   kcal:92,  p:15.6, c:3.1,  f:1.4,  u:'g'},
+  // ── HUEVOS (por unidad y por gramos) ──
+  {n:'Huevo entero (talla M ~55g)',kcal:77, p:6.7,  c:0.6,  f:5.5,  u:'ud', ref:55},
+  {n:'Huevo entero (talla L ~65g)',kcal:91, p:7.9,  c:0.7,  f:6.5,  u:'ud', ref:65},
+  {n:'Huevo entero',              kcal:155, p:13,   c:1.1,  f:11,   u:'g'},
+  {n:'Clara de huevo',            kcal:52,  p:11,   c:0.7,  f:0.2,  u:'g'},
+  {n:'Clara de huevo (1 ud)',     kcal:17,  p:3.6,  c:0.2,  f:0.1,  u:'ud', ref:33},
+  {n:'Yema de huevo',             kcal:322, p:15.9, c:3.6,  f:26.5, u:'g'},
+  {n:'Yema de huevo (1 ud)',      kcal:55,  p:2.7,  c:0.6,  f:4.5,  u:'ud', ref:17},
+  // ── LÁCTEOS ──
+  {n:'Leche entera',              kcal:61,  p:3.2,  c:4.8,  f:3.3,  u:'ml'},
+  {n:'Leche semidesnatada',       kcal:46,  p:3.3,  c:4.7,  f:1.6,  u:'ml'},
+  {n:'Leche desnatada',           kcal:35,  p:3.4,  c:5,    f:0.1,  u:'ml'},
+  {n:'Leche vegetal avena',       kcal:44,  p:1.1,  c:6.5,  f:1.5,  u:'ml'},
+  {n:'Leche vegetal almendra',    kcal:22,  p:0.6,  c:2.3,  f:1.2,  u:'ml'},
+  {n:'Yogur natural',             kcal:61,  p:3.5,  c:4.7,  f:3.3,  u:'g'},
+  {n:'Yogur griego 0%',           kcal:57,  p:10,   c:3.7,  f:0.4,  u:'g'},
+  {n:'Yogur griego entero',       kcal:97,  p:9,    c:3.6,  f:5,    u:'g'},
+  {n:'Yogur natural (125g)',      kcal:76,  p:4.4,  c:5.9,  f:4.1,  u:'ud', ref:125},
+  {n:'Yogur griego 0% (125g)',    kcal:71,  p:12.5, c:4.6,  f:0.5,  u:'ud', ref:125},
+  {n:'Queso cottage',             kcal:98,  p:11,   c:3.4,  f:4.3,  u:'g'},
+  {n:'Requesón',                  kcal:74,  p:12,   c:3,    f:1,    u:'g'},
+  {n:'Queso mozzarella',          kcal:280, p:28,   c:3.1,  f:17,   u:'g'},
+  {n:'Queso manchego curado',     kcal:392, p:31.7, c:0.5,  f:29.8, u:'g'},
+  {n:'Queso cheddar',             kcal:403, p:24.9, c:1.3,  f:33.1, u:'g'},
+  {n:'Queso philadelphia',        kcal:257, p:5.9,  c:4.1,  f:24,   u:'g'},
+  {n:'Proteína whey (1 scoop)',   kcal:120, p:24,   c:2,    f:1.5,  u:'ud', ref:30},
+  {n:'Proteína whey',             kcal:400, p:80,   c:6,    f:4,    u:'g'},
+  {n:'Proteína caseína',          kcal:370, p:78,   c:5,    f:2,    u:'g'},
+  // ── CEREALES ──
+  {n:'Avena cruda',               kcal:389, p:17,   c:66,   f:7,    u:'g'},
+  {n:'Arroz blanco crudo',        kcal:365, p:7,    c:80,   f:0.7,  u:'g'},
+  {n:'Arroz blanco cocido',       kcal:130, p:2.7,  c:28,   f:0.3,  u:'g'},
+  {n:'Arroz integral crudo',      kcal:362, p:7.5,  c:76,   f:2.7,  u:'g'},
+  {n:'Arroz integral cocido',     kcal:111, p:2.6,  c:23,   f:0.9,  u:'g'},
+  {n:'Pasta cruda',               kcal:371, p:13,   c:74,   f:1.5,  u:'g'},
+  {n:'Pasta cocida',              kcal:131, p:5,    c:25,   f:1.1,  u:'g'},
+  {n:'Pan blanco (1 rebanada)',   kcal:66,  p:2.3,  c:12.5, f:0.8,  u:'ud', ref:25},
+  {n:'Pan integral (1 rebanada)', kcal:62,  p:3.3,  c:10.3, f:1.1,  u:'ud', ref:25},
+  {n:'Pan blanco',                kcal:265, p:9,    c:49,   f:3.2,  u:'g'},
+  {n:'Pan integral',              kcal:247, p:13,   c:41,   f:4.2,  u:'g'},
+  {n:'Tortilla de trigo (wrap)',  kcal:306, p:8.2,  c:49.9, f:8.3,  u:'g'},
+  {n:'Wrap grande (1 ud ~60g)',   kcal:184, p:4.9,  c:29.9, f:5,    u:'ud', ref:60},
+  {n:'Cuscús cocido',             kcal:112, p:3.8,  c:23,   f:0.2,  u:'g'},
+  {n:'Quinoa cocida',             kcal:120, p:4.4,  c:21.3, f:1.9,  u:'g'},
+  {n:'Maíz cocido',               kcal:96,  p:3.4,  c:21,   f:1.5,  u:'g'},
+  {n:'Corn flakes',               kcal:357, p:7.5,  c:84,   f:0.9,  u:'g'},
+  {n:'Granola',                   kcal:471, p:10,   c:64,   f:20,   u:'g'},
+  {n:'Galletas María (1 ud)',     kcal:22,  p:0.4,  c:3.6,  f:0.7,  u:'ud', ref:5},
+  {n:'Harina de avena',           kcal:375, p:13,   c:65,   f:6.5,  u:'g'},
+  {n:'Crema de arroz',            kcal:362, p:7,    c:80,   f:0.8,  u:'g'},
+  {n:'Tortitas de arroz (1 ud)',  kcal:35,  p:0.7,  c:7.5,  f:0.2,  u:'ud', ref:9},
   // ── TUBÉRCULOS ──
-  {n:'Patata cocida',            kcal:87,  p:1.9,  c:20,   f:0.1,  u:'g'},
-  {n:'Patata al horno',          kcal:93,  p:2.5,  c:21,   f:0.1,  u:'g'},
-  {n:'Boniato cocido',           kcal:86,  p:1.6,  c:20,   f:0.1,  u:'g'},
-  {n:'Yuca cocida',              kcal:149, p:1.4,  c:35.5, f:0.3,  u:'g'},
+  {n:'Patata cocida',             kcal:87,  p:1.9,  c:20,   f:0.1,  u:'g'},
+  {n:'Patata al horno',           kcal:93,  p:2.5,  c:21,   f:0.1,  u:'g'},
+  {n:'Boniato cocido',            kcal:86,  p:1.6,  c:20,   f:0.1,  u:'g'},
+  {n:'Yuca cocida',               kcal:149, p:1.4,  c:35.5, f:0.3,  u:'g'},
   // ── FRUTAS ──
-  {n:'Plátano',                  kcal:89,  p:1.1,  c:23,   f:0.3,  u:'g'},
-  {n:'Manzana',                  kcal:52,  p:0.3,  c:14,   f:0.2,  u:'g'},
-  {n:'Naranja',                  kcal:47,  p:0.9,  c:12,   f:0.1,  u:'g'},
-  {n:'Mandarina',                kcal:53,  p:0.9,  c:13.3, f:0.3,  u:'g'},
-  {n:'Fresas',                   kcal:32,  p:0.7,  c:7.7,  f:0.3,  u:'g'},
-  {n:'Arándanos',                kcal:57,  p:0.7,  c:14.5, f:0.3,  u:'g'},
-  {n:'Uvas',                     kcal:67,  p:0.6,  c:17.2, f:0.4,  u:'g'},
-  {n:'Sandía',                   kcal:30,  p:0.6,  c:7.6,  f:0.2,  u:'g'},
-  {n:'Melón',                    kcal:34,  p:0.8,  c:8,    f:0.2,  u:'g'},
-  {n:'Piña',                     kcal:50,  p:0.5,  c:13.1, f:0.1,  u:'g'},
-  {n:'Mango',                    kcal:60,  p:0.8,  c:15,   f:0.4,  u:'g'},
-  {n:'Kiwi',                     kcal:61,  p:1.1,  c:15,   f:0.5,  u:'g'},
-  {n:'Pera',                     kcal:57,  p:0.4,  c:15.2, f:0.1,  u:'g'},
-  {n:'Melocotón',                kcal:39,  p:0.9,  c:9.5,  f:0.3,  u:'g'},
-  {n:'Cereza',                   kcal:63,  p:1.1,  c:16,   f:0.2,  u:'g'},
-  {n:'Dátil',                    kcal:282, p:2.5,  c:75,   f:0.4,  u:'g'},
-  // ── VERDURAS Y HORTALIZAS ──
-  {n:'Brócoli',                  kcal:34,  p:2.8,  c:7,    f:0.4,  u:'g'},
-  {n:'Espinacas',                kcal:23,  p:2.9,  c:3.6,  f:0.4,  u:'g'},
-  {n:'Lechuga',                  kcal:15,  p:1.4,  c:2.3,  f:0.2,  u:'g'},
-  {n:'Tomate',                   kcal:18,  p:0.9,  c:3.9,  f:0.2,  u:'g'},
-  {n:'Tomate cherry',            kcal:18,  p:0.9,  c:3.9,  f:0.2,  u:'g'},
-  {n:'Pepino',                   kcal:15,  p:0.7,  c:3.6,  f:0.1,  u:'g'},
-  {n:'Zanahoria',                kcal:41,  p:0.9,  c:9.6,  f:0.2,  u:'g'},
-  {n:'Cebolla',                  kcal:40,  p:1.1,  c:9.3,  f:0.1,  u:'g'},
-  {n:'Pimiento rojo',            kcal:31,  p:1,    c:6,    f:0.3,  u:'g'},
-  {n:'Pimiento verde',           kcal:20,  p:0.9,  c:4.6,  f:0.2,  u:'g'},
-  {n:'Calabacín',                kcal:17,  p:1.2,  c:3.1,  f:0.3,  u:'g'},
-  {n:'Berenjena',                kcal:25,  p:1,    c:5.8,  f:0.2,  u:'g'},
-  {n:'Coliflor',                 kcal:25,  p:1.9,  c:5,    f:0.3,  u:'g'},
-  {n:'Col rizada (kale)',        kcal:35,  p:2.9,  c:4.4,  f:0.5,  u:'g'},
-  {n:'Champiñones',              kcal:22,  p:3.1,  c:3.3,  f:0.3,  u:'g'},
-  {n:'Espárragos',               kcal:20,  p:2.2,  c:3.9,  f:0.1,  u:'g'},
-  {n:'Judías verdes',            kcal:31,  p:1.8,  c:7,    f:0.1,  u:'g'},
-  {n:'Guisantes',                kcal:81,  p:5.4,  c:14.5, f:0.4,  u:'g'},
-  {n:'Maíz dulce',               kcal:86,  p:3.2,  c:19,   f:1.2,  u:'g'},
-  {n:'Aguacate',                 kcal:160, p:2,    c:9,    f:15,   u:'g'},
+  {n:'Plátano',                   kcal:89,  p:1.1,  c:23,   f:0.3,  u:'g'},
+  {n:'Plátano mediano (120g)',    kcal:107, p:1.3,  c:27.6, f:0.4,  u:'ud', ref:120},
+  {n:'Manzana',                   kcal:52,  p:0.3,  c:14,   f:0.2,  u:'g'},
+  {n:'Manzana mediana (150g)',    kcal:78,  p:0.5,  c:21,   f:0.3,  u:'ud', ref:150},
+  {n:'Naranja',                   kcal:47,  p:0.9,  c:12,   f:0.1,  u:'g'},
+  {n:'Naranja mediana (130g)',    kcal:61,  p:1.2,  c:15.6, f:0.1,  u:'ud', ref:130},
+  {n:'Mandarina (80g)',           kcal:42,  p:0.7,  c:10.6, f:0.2,  u:'ud', ref:80},
+  {n:'Fresas',                    kcal:32,  p:0.7,  c:7.7,  f:0.3,  u:'g'},
+  {n:'Arándanos',                 kcal:57,  p:0.7,  c:14.5, f:0.3,  u:'g'},
+  {n:'Uvas',                      kcal:67,  p:0.6,  c:17.2, f:0.4,  u:'g'},
+  {n:'Sandía',                    kcal:30,  p:0.6,  c:7.6,  f:0.2,  u:'g'},
+  {n:'Melón',                     kcal:34,  p:0.8,  c:8,    f:0.2,  u:'g'},
+  {n:'Piña',                      kcal:50,  p:0.5,  c:13.1, f:0.1,  u:'g'},
+  {n:'Mango',                     kcal:60,  p:0.8,  c:15,   f:0.4,  u:'g'},
+  {n:'Kiwi',                      kcal:61,  p:1.1,  c:15,   f:0.5,  u:'g'},
+  {n:'Kiwi (1 ud ~80g)',          kcal:49,  p:0.9,  c:12,   f:0.4,  u:'ud', ref:80},
+  {n:'Pera',                      kcal:57,  p:0.4,  c:15.2, f:0.1,  u:'g'},
+  {n:'Melocotón',                 kcal:39,  p:0.9,  c:9.5,  f:0.3,  u:'g'},
+  {n:'Dátil (1 ud ~8g)',          kcal:23,  p:0.2,  c:6,    f:0,    u:'ud', ref:8},
+  // ── VERDURAS ──
+  {n:'Brócoli',                   kcal:34,  p:2.8,  c:7,    f:0.4,  u:'g'},
+  {n:'Espinacas',                 kcal:23,  p:2.9,  c:3.6,  f:0.4,  u:'g'},
+  {n:'Lechuga',                   kcal:15,  p:1.4,  c:2.3,  f:0.2,  u:'g'},
+  {n:'Tomate',                    kcal:18,  p:0.9,  c:3.9,  f:0.2,  u:'g'},
+  {n:'Tomate mediano (120g)',     kcal:22,  p:1.1,  c:4.7,  f:0.2,  u:'ud', ref:120},
+  {n:'Pepino',                    kcal:15,  p:0.7,  c:3.6,  f:0.1,  u:'g'},
+  {n:'Zanahoria',                 kcal:41,  p:0.9,  c:9.6,  f:0.2,  u:'g'},
+  {n:'Zanahoria (1 ud ~80g)',     kcal:33,  p:0.7,  c:7.7,  f:0.2,  u:'ud', ref:80},
+  {n:'Cebolla',                   kcal:40,  p:1.1,  c:9.3,  f:0.1,  u:'g'},
+  {n:'Pimiento rojo',             kcal:31,  p:1,    c:6,    f:0.3,  u:'g'},
+  {n:'Pimiento verde',            kcal:20,  p:0.9,  c:4.6,  f:0.2,  u:'g'},
+  {n:'Calabacín',                 kcal:17,  p:1.2,  c:3.1,  f:0.3,  u:'g'},
+  {n:'Berenjena',                 kcal:25,  p:1,    c:5.8,  f:0.2,  u:'g'},
+  {n:'Coliflor',                  kcal:25,  p:1.9,  c:5,    f:0.3,  u:'g'},
+  {n:'Kale',                      kcal:35,  p:2.9,  c:4.4,  f:0.5,  u:'g'},
+  {n:'Champiñones',               kcal:22,  p:3.1,  c:3.3,  f:0.3,  u:'g'},
+  {n:'Espárragos',                kcal:20,  p:2.2,  c:3.9,  f:0.1,  u:'g'},
+  {n:'Judías verdes',             kcal:31,  p:1.8,  c:7,    f:0.1,  u:'g'},
+  {n:'Guisantes',                 kcal:81,  p:5.4,  c:14.5, f:0.4,  u:'g'},
+  {n:'Aguacate',                  kcal:160, p:2,    c:9,    f:15,   u:'g'},
+  {n:'Aguacate (1/2 ud ~75g)',    kcal:120, p:1.5,  c:6.8,  f:11.3, u:'ud', ref:75},
   // ── LEGUMBRES ──
-  {n:'Lentejas cocidas',         kcal:116, p:9,    c:20,   f:0.4,  u:'g'},
-  {n:'Garbanzos cocidos',        kcal:164, p:8.9,  c:27,   f:2.6,  u:'g'},
-  {n:'Alubias negras cocidas',   kcal:132, p:8.9,  c:23.7, f:0.5,  u:'g'},
-  {n:'Alubias blancas cocidas',  kcal:139, p:9.7,  c:25,   f:0.5,  u:'g'},
-  {n:'Edamame',                  kcal:121, p:11.9, c:8.9,  f:5.2,  u:'g'},
-  {n:'Tofu firme',               kcal:76,  p:8,    c:1.9,  f:4.8,  u:'g'},
-  {n:'Tempeh',                   kcal:195, p:19,   c:9.4,  f:11,   u:'g'},
-  // ── FRUTOS SECOS Y SEMILLAS ──
-  {n:'Almendras',                kcal:579, p:21,   c:22,   f:50,   u:'g'},
-  {n:'Nueces',                   kcal:654, p:15,   c:14,   f:65,   u:'g'},
-  {n:'Anacardos',                kcal:553, p:18.2, c:30.2, f:43.8, u:'g'},
-  {n:'Pistachos',                kcal:562, p:20.6, c:27.5, f:45.3, u:'g'},
-  {n:'Avellanas',                kcal:628, p:15,   c:17,   f:61,   u:'g'},
-  {n:'Cacahuetes',               kcal:567, p:25.8, c:16.1, f:49.2, u:'g'},
-  {n:'Semillas de chía',         kcal:486, p:16.5, c:42.1, f:30.7, u:'g'},
-  {n:'Semillas de lino',         kcal:534, p:18.3, c:28.9, f:42.2, u:'g'},
-  {n:'Semillas de calabaza',     kcal:559, p:30.2, c:10.7, f:49,   u:'g'},
-  {n:'Mantequilla de cacahuete', kcal:588, p:25,   c:20,   f:50,   u:'g'},
-  {n:'Mantequilla de almendra',  kcal:614, p:21,   c:19.1, f:55.5, u:'g'},
+  {n:'Lentejas cocidas',          kcal:116, p:9,    c:20,   f:0.4,  u:'g'},
+  {n:'Garbanzos cocidos',         kcal:164, p:8.9,  c:27,   f:2.6,  u:'g'},
+  {n:'Alubias negras cocidas',    kcal:132, p:8.9,  c:23.7, f:0.5,  u:'g'},
+  {n:'Alubias blancas cocidas',   kcal:139, p:9.7,  c:25,   f:0.5,  u:'g'},
+  {n:'Edamame',                   kcal:121, p:11.9, c:8.9,  f:5.2,  u:'g'},
+  {n:'Tofu firme',                kcal:76,  p:8,    c:1.9,  f:4.8,  u:'g'},
+  {n:'Tempeh',                    kcal:195, p:19,   c:9.4,  f:11,   u:'g'},
+  // ── FRUTOS SECOS ──
+  {n:'Almendras',                 kcal:579, p:21,   c:22,   f:50,   u:'g'},
+  {n:'Almendras (puñado ~25g)',   kcal:145, p:5.3,  c:5.5,  f:12.5, u:'ud', ref:25},
+  {n:'Nueces',                    kcal:654, p:15,   c:14,   f:65,   u:'g'},
+  {n:'Nueces (puñado ~25g)',      kcal:164, p:3.8,  c:3.5,  f:16.3, u:'ud', ref:25},
+  {n:'Anacardos',                 kcal:553, p:18.2, c:30.2, f:43.8, u:'g'},
+  {n:'Pistachos',                 kcal:562, p:20.6, c:27.5, f:45.3, u:'g'},
+  {n:'Avellanas',                 kcal:628, p:15,   c:17,   f:61,   u:'g'},
+  {n:'Cacahuetes',                kcal:567, p:25.8, c:16.1, f:49.2, u:'g'},
+  {n:'Semillas de chía',          kcal:486, p:16.5, c:42.1, f:30.7, u:'g'},
+  {n:'Semillas de lino',          kcal:534, p:18.3, c:28.9, f:42.2, u:'g'},
+  {n:'Semillas de calabaza',      kcal:559, p:30.2, c:10.7, f:49,   u:'g'},
+  {n:'Mantequilla de cacahuete',  kcal:588, p:25,   c:20,   f:50,   u:'g'},
+  {n:'Mantequilla de almendra',   kcal:614, p:21,   c:19.1, f:55.5, u:'g'},
+  {n:'Crema de cacahuete',         kcal:588, p:25,   c:20,   f:50,   u:'g'},
+  {n:'Crema de cacahuete (1 cda)', kcal:94,  p:4,    c:3.2,  f:8,    u:'ud', ref:16},
   // ── ACEITES Y GRASAS ──
-  {n:'Aceite de oliva',          kcal:884, p:0,    c:0,    f:100,  u:'ml'},
-  {n:'Aceite de coco',           kcal:892, p:0,    c:0,    f:99.1, u:'ml'},
-  {n:'Mantequilla',              kcal:717, p:0.9,  c:0.1,  f:81.1, u:'g'},
-  {n:'Ghee',                     kcal:900, p:0,    c:0,    f:99.8, u:'g'},
+  {n:'Aceite de oliva',           kcal:884, p:0,    c:0,    f:100,  u:'ml'},
+  {n:'Aceite de oliva (1 cda)',   kcal:119, p:0,    c:0,    f:13.5, u:'ud', ref:13.5},
+  {n:'Aceite de coco',            kcal:892, p:0,    c:0,    f:99.1, u:'ml'},
+  {n:'Mantequilla',               kcal:717, p:0.9,  c:0.1,  f:81.1, u:'g'},
+  {n:'Ghee',                      kcal:900, p:0,    c:0,    f:99.8, u:'g'},
   // ── BEBIDAS ──
-  {n:'Zumo de naranja natural',  kcal:45,  p:0.7,  c:10.4, f:0.2,  u:'ml'},
-  {n:'Leche de avena',           kcal:44,  p:1.1,  c:6.5,  f:1.5,  u:'ml'},
-  {n:'Bebida de soja',           kcal:40,  p:3.6,  c:2.8,  f:1.8,  u:'ml'},
-  {n:'Zumo de manzana',          kcal:46,  p:0.1,  c:11.7, f:0.1,  u:'ml'},
+  {n:'Zumo naranja natural',      kcal:45,  p:0.7,  c:10.4, f:0.2,  u:'ml'},
+  {n:'Leche de avena',            kcal:44,  p:1.1,  c:6.5,  f:1.5,  u:'ml'},
+  {n:'Bebida de soja',            kcal:40,  p:3.6,  c:2.8,  f:1.8,  u:'ml'},
+  {n:'Zumo de manzana',           kcal:46,  p:0.1,  c:11.7, f:0.1,  u:'ml'},
   // ── SALSAS Y CONDIMENTOS ──
-  {n:'Ketchup',                  kcal:100, p:1.4,  c:25.3, f:0.1,  u:'g'},
-  {n:'Mayonesa',                 kcal:680, p:1.2,  c:0.6,  f:74.9, u:'g'},
-  {n:'Salsa de soja',            kcal:53,  p:8.1,  c:4.9,  f:0.6,  u:'ml'},
-  {n:'Hummus',                   kcal:177, p:7.9,  c:14.3, f:10.4, u:'g'},
+  {n:'Ketchup',                   kcal:100, p:1.4,  c:25.3, f:0.1,  u:'g'},
+  {n:'Mayonesa',                  kcal:680, p:1.2,  c:0.6,  f:74.9, u:'g'},
+  {n:'Mayonesa (1 cda ~15g)',     kcal:102, p:0.2,  c:0.1,  f:11.2, u:'ud', ref:15},
+  {n:'Salsa de soja',             kcal:53,  p:8.1,  c:4.9,  f:0.6,  u:'ml'},
+  {n:'Hummus',                    kcal:177, p:7.9,  c:14.3, f:10.4, u:'g'},
   // ── DULCES Y SNACKS ──
-  {n:'Chocolate negro 70%',      kcal:598, p:7.8,  c:45.9, f:42.6, u:'g'},
-  {n:'Chocolate con leche',      kcal:535, p:7.6,  c:59.4, f:29.7, u:'g'},
-  {n:'Arroz inflado con chocolate',kcal:384,p:4.4, c:75,   f:7.5,  u:'g'},
-  {n:'Barrita de proteína (media)',kcal:210,p:20,  c:22,   f:7,    u:'g'},
-  {n:'Crema de arroz',           kcal:362, p:7,    c:80,   f:0.8,  u:'g'},
-  {n:'Tortitas de arroz',        kcal:387, p:7.5,  c:82,   f:2.5,  u:'g'},
-];
+  {n:'Chocolate negro 70%',       kcal:598, p:7.8,  c:45.9, f:42.6, u:'g'},
+  {n:'Chocolate con leche',       kcal:535, p:7.6,  c:59.4, f:29.7, u:'g'},
+  {n:'Barrita proteína (media)',  kcal:210, p:20,   c:22,   f:7,    u:'ud', ref:60},
+  {n:'Harina de avena',           kcal:375, p:13,   c:65,   f:6.5,  u:'g'},
+  {n:'Crema de arroz',            kcal:362, p:7,    c:80,   f:0.8,  u:'g'},
+  {n:'Tortitas de arroz',         kcal:387, p:7.5,  c:82,   f:2.5,  u:'g'},
+]
 
 const DEFAULT_MEALS = ['Desayuno','Media mañana','Comida','Merienda','Cena'];
 
@@ -1573,8 +1604,16 @@ function renderMeals(d){
     delBtn.addEventListener('click',()=>{ confirmDeleteMeal(meal.id); });
 
     hdr.appendChild(nameInput); hdr.appendChild(kcalBadge);
-    hdr.appendChild(addBtn);    hdr.appendChild(delBtn);
+    hdr.appendChild(delBtn);
     block.appendChild(hdr);
+
+    // Add food button — full width below header
+    const addRow = document.createElement('div');
+    addRow.style.cssText='padding:6px 14px;border-bottom:1px solid var(--b)';
+    addRow.appendChild(addBtn);
+    addBtn.style.cssText='width:100%;background:var(--s2);border:1px solid var(--b2);border-radius:8px;color:var(--ac);height:32px;font-size:13px;font-weight:700;font-family:"Syne",sans-serif;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px';
+    addBtn.textContent='+ Añadir alimento';
+    block.appendChild(addRow);
 
     // Macro mini-row for meal
     if(hasFoods){
@@ -1664,33 +1703,45 @@ function selectFood(i){
   selectedFoodIdx=i;
   const food=foodSearchResults[i];
   document.getElementById('food-qty-section').style.display='block';
-  document.getElementById('food-qty-label').textContent=`Cantidad (${food.u})`;
-  document.getElementById('food-qty-input').value='100';
+  const isUnit = food.u==='ud';
+  document.getElementById('food-qty-label').textContent = isUnit ? 'Cantidad (unidades)' : `Cantidad (${food.u})`;
+  document.getElementById('food-qty-input').value = isUnit ? '1' : '100';
+  document.getElementById('food-qty-input').step  = isUnit ? '0.5' : '1';
   updateFoodPreview();
-  // highlight selected
   document.querySelectorAll('#food-results-list > div').forEach((el,idx)=>{
     el.style.background = idx===i ? 'var(--ac2)' : '';
     el.style.border = idx===i ? '1px solid var(--ac3)' : '';
   });
 }
 
+function calcFoodMacros(food, qty){
+  // For unit-based foods: macros are already per 1 unit, multiply by qty
+  // For g/ml foods: macros are per 100, ratio = qty/100
+  const ratio = food.u==='ud' ? qty : qty/100;
+  return {
+    kcal: Math.round(food.kcal*ratio*10)/10,
+    p:    Math.round(food.p*ratio*10)/10,
+    c:    Math.round(food.c*ratio*10)/10,
+    f:    Math.round(food.f*ratio*10)/10,
+  };
+}
+
 function updateFoodPreview(){
   if(selectedFoodIdx===null) return;
   const food = foodSearchResults[selectedFoodIdx];
   const qty  = Number(document.getElementById('food-qty-input').value)||0;
-  const ratio = qty/100;
-  const kcal = Math.round(food.kcal*ratio*10)/10;
-  const p    = Math.round(food.p*ratio*10)/10;
-  const c    = Math.round(food.c*ratio*10)/10;
-  const f    = Math.round(food.f*ratio*10)/10;
+  const m    = calcFoodMacros(food, qty);
+  const unitLabel = food.u==='ud' ? `${qty} ud` : `${qty}${food.u}`;
+  const refLabel  = food.ref ? ` (~${Math.round(food.ref*qty)}g)` : '';
   const prev = document.getElementById('food-preview');
   prev.style.display='block';
   prev.innerHTML=`
+    <div style="font-size:11px;color:var(--mu);text-align:center;margin-bottom:6px;font-family:'Syne',sans-serif">${unitLabel}${refLabel}</div>
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center">
-      <div style="background:var(--s3);border-radius:8px;padding:8px"><div style="font-size:9px;color:var(--mu);text-transform:uppercase;font-family:'Syne',sans-serif">Kcal</div><div style="font-size:16px;font-weight:800;color:var(--ye);font-family:'Syne',sans-serif">${kcal}</div></div>
-      <div style="background:var(--s3);border-radius:8px;padding:8px"><div style="font-size:9px;color:var(--mu);text-transform:uppercase;font-family:'Syne',sans-serif">Prot</div><div style="font-size:16px;font-weight:800;color:var(--ac);font-family:'Syne',sans-serif">${p}g</div></div>
-      <div style="background:var(--s3);border-radius:8px;padding:8px"><div style="font-size:9px;color:var(--mu);text-transform:uppercase;font-family:'Syne',sans-serif">Carbs</div><div style="font-size:16px;font-weight:800;color:var(--bl);font-family:'Syne',sans-serif">${c}g</div></div>
-      <div style="background:var(--s3);border-radius:8px;padding:8px"><div style="font-size:9px;color:var(--mu);text-transform:uppercase;font-family:'Syne',sans-serif">Grasa</div><div style="font-size:16px;font-weight:800;color:var(--pu);font-family:'Syne',sans-serif">${f}g</div></div>
+      <div style="background:var(--s3);border-radius:8px;padding:8px"><div style="font-size:9px;color:var(--mu);text-transform:uppercase;font-family:'Syne',sans-serif">Kcal</div><div style="font-size:16px;font-weight:800;color:var(--ye);font-family:'Syne',sans-serif">${m.kcal}</div></div>
+      <div style="background:var(--s3);border-radius:8px;padding:8px"><div style="font-size:9px;color:var(--mu);text-transform:uppercase;font-family:'Syne',sans-serif">Prot</div><div style="font-size:16px;font-weight:800;color:var(--ac);font-family:'Syne',sans-serif">${m.p}g</div></div>
+      <div style="background:var(--s3);border-radius:8px;padding:8px"><div style="font-size:9px;color:var(--mu);text-transform:uppercase;font-family:'Syne',sans-serif">Carbs</div><div style="font-size:16px;font-weight:800;color:var(--bl);font-family:'Syne',sans-serif">${m.c}g</div></div>
+      <div style="background:var(--s3);border-radius:8px;padding:8px"><div style="font-size:9px;color:var(--mu);text-transform:uppercase;font-family:'Syne',sans-serif">Grasa</div><div style="font-size:16px;font-weight:800;color:var(--pu);font-family:'Syne',sans-serif">${m.f}g</div></div>
     </div>`;
 }
 
@@ -1699,16 +1750,14 @@ function confirmAddFood(){
   const food = foodSearchResults[selectedFoodIdx];
   const qty  = Number(document.getElementById('food-qty-input').value)||0;
   if(!qty){ showToast('Introduce una cantidad'); return; }
-  const ratio = qty/100;
+  const m = calcFoodMacros(food, qty);
+  const unitDisplay = food.u==='ud' ? `ud` : food.u;
   const item = {
     id:   uid(),
     name: food.n,
     qty,
-    unit: food.u,
-    kcal: Math.round(food.kcal*ratio*10)/10,
-    p:    Math.round(food.p*ratio*10)/10,
-    c:    Math.round(food.c*ratio*10)/10,
-    f:    Math.round(food.f*ratio*10)/10,
+    unit: unitDisplay,
+    kcal: m.kcal, p: m.p, c: m.c, f: m.f,
   };
   const log = getLog(viewDate);
   const meal = (log.meals||[]).find(m=>m.id===foodModalMealId);
@@ -1771,6 +1820,14 @@ function renderSessionPills(){
 
 function loadSession(sessionId){
   const wk=getWorkout(workoutDate);
+  // If cardio session, show picker first
+  if(sessionId==='s5'){
+    wk.sessionId=sessionId;
+    saveData();
+    renderSessionPills();
+    renderCardioPicker();
+    return;
+  }
   if(wk.sessionId===sessionId && wk.groups.length>0){ renderExerciseArea(); return; }
   wk.sessionId=sessionId;
   if(sessionId!=='custom'){
@@ -1779,6 +1836,44 @@ function loadSession(sessionId){
   } else { if(!wk.groups||!wk.groups.length) wk.groups=[]; }
   saveData();
   renderSessionPills();
+  renderExerciseArea();
+}
+
+function renderCardioPicker(){
+  const area=document.getElementById('exercise-area');
+  const CARDIO_OPTIONS=[
+    {value:'Natación · Series',     icon:'🏊', label:'Natación',  sub:'Series'},
+    {value:'Natación · Tirada larga',icon:'🏊', label:'Natación',  sub:'Tirada larga'},
+    {value:'Carrera · Series',       icon:'🏃', label:'Carrera',   sub:'Series'},
+    {value:'Carrera · Tirada larga', icon:'🏃', label:'Carrera',   sub:'Tirada larga'},
+  ];
+  area.innerHTML=`
+    <div style="margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;color:var(--mu);font-family:'Syne',sans-serif;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px">¿Qué tipo de cardio?</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        ${CARDIO_OPTIONS.map(o=>`
+          <button onclick="loadCardioType('${o.value}')"
+            style="background:var(--s);border:1px solid var(--b2);border-radius:14px;padding:16px 10px;cursor:pointer;text-align:center;transition:border-color .15s"
+            onmouseenter="this.style.borderColor='var(--ac)'" onmouseleave="this.style.borderColor='var(--b2)'">
+            <div style="font-size:28px;margin-bottom:6px">${o.icon}</div>
+            <div style="font-size:13px;font-weight:700;color:var(--w);font-family:'Syne',sans-serif">${o.label}</div>
+            <div style="font-size:11px;color:var(--mu);margin-top:2px">${o.sub}</div>
+          </button>`).join('')}
+      </div>
+    </div>`;
+}
+
+function loadCardioType(exName){
+  const wk=getWorkout(workoutDate);
+  // Load only the chosen exercise
+  wk.groups=[{
+    name: exName.split(' · ')[0],
+    exercises:[{
+      name: exName,
+      sets:[{dist:'',distUnit:'m',time:'',rest:'',note:''}]
+    }]
+  }];
+  saveData();
   renderExerciseArea();
 }
 
@@ -1796,6 +1891,7 @@ function renderExerciseArea(){
   } else prevRef.innerHTML='';
 
   if(!wk.groups||!wk.groups.length){
+    if(wk.sessionId==='s5'){ renderCardioPicker(); return; }
     area.innerHTML=`<div class="empty-state"><div class="emoji">💪</div><p>Selecciona una sesión o añade un grupo muscular para empezar</p></div>`;
     return;
   }
@@ -1814,8 +1910,9 @@ function renderExerciseArea(){
     gh.querySelector('input').addEventListener('change',e=>{ wk.groups[gi].name=e.target.value; saveData(); });
     groupDiv.appendChild(gh);
 
+    const isCardio = wk.sessionId==='s5';
     group.exercises.forEach((ex,ei)=>{
-      groupDiv.appendChild(buildExBlock(gi,ei,ex,wk));
+      groupDiv.appendChild(buildExBlock(gi,ei,ex,wk,isCardio));
     });
 
     const addExBtn=document.createElement('button');
@@ -1831,7 +1928,7 @@ function renderExerciseArea(){
   });
 }
 
-function buildExBlock(gi,ei,ex,wk){
+function buildExBlock(gi,ei,ex,wk,isCardio=false){
   const block=document.createElement('div');
   block.className='ex-block';
 
@@ -1864,11 +1961,15 @@ function buildExBlock(gi,ei,ex,wk){
   }
 
   // Set labels
-  body.innerHTML+=`<div class="set-labels"><div class="set-label">#</div><div class="set-label">KG</div><div class="set-label">REPS</div><div class="set-label">RPE</div><div class="set-label"></div></div>`;
+  if(isCardio){
+    body.innerHTML+=`<div class="set-labels cardio"><div class="set-label">#</div><div class="set-label">DIST</div><div class="set-label">UNID</div><div class="set-label"></div></div>`;
+  } else {
+    body.innerHTML+=`<div class="set-labels"><div class="set-label">#</div><div class="set-label">KG</div><div class="set-label">REPS</div><div class="set-label">RPE</div><div class="set-label"></div></div>`;
+  }
 
   const setsContainer=document.createElement('div');
   ex.sets.forEach((set,si)=>{
-    setsContainer.appendChild(buildSetRow(gi,ei,si,set,wk));
+    setsContainer.appendChild(buildSetRow(gi,ei,si,set,wk,isCardio));
   });
   body.appendChild(setsContainer);
 
@@ -1877,7 +1978,7 @@ function buildExBlock(gi,ei,ex,wk){
   addSetBtn.style.marginTop='6px';
   addSetBtn.textContent='+ Serie';
   addSetBtn.addEventListener('click',()=>{
-    wk.groups[gi].exercises[ei].sets.push({w:'',r:'',rpe:'',rest:'',note:''});
+    wk.groups[gi].exercises[ei].sets.push(isCardio ? {dist:'',distUnit:'m',time:'',rpe:'',rest:'',note:''} : {w:'',r:'',rpe:'',rest:'',note:''});
     saveData(); renderExerciseArea();
   });
   body.appendChild(addSetBtn);
@@ -1892,7 +1993,7 @@ function makeInput(type, ph, val, extraStyle){
   return inp;
 }
 
-function buildSetRow(gi,ei,si,set,wk){
+function buildSetRow(gi,ei,si,set,wk,isCardio=false){
   const wrapper=document.createElement('div');
 
   const row=document.createElement('div');
@@ -1901,20 +2002,39 @@ function buildSetRow(gi,ei,si,set,wk){
   const numDiv=document.createElement('div');
   numDiv.className='set-num'; numDiv.textContent=si+1;
 
-  const kgI=makeInput('number','—',set.w);  kgI.step='0.5';
-  const repI=makeInput('number','—',set.r);
   const rpeI=makeInput('number','8',set.rpe); rpeI.min='1'; rpeI.max='10';
+  rpeI.addEventListener('change',e=>{wk.groups[gi].exercises[ei].sets[si].rpe=e.target.value;saveData();});
 
   const delBtn=document.createElement('button');
   delBtn.className='set-del'; delBtn.textContent='✕';
   delBtn.addEventListener('click',()=>removeSet(gi,ei,si));
 
-  kgI.addEventListener('change',e=>{wk.groups[gi].exercises[ei].sets[si].w=e.target.value;saveData();});
-  repI.addEventListener('change',e=>{wk.groups[gi].exercises[ei].sets[si].r=e.target.value;saveData();});
-  rpeI.addEventListener('change',e=>{wk.groups[gi].exercises[ei].sets[si].rpe=e.target.value;saveData();});
+  if(isCardio){
+    row.classList.add('cardio');
+    const distI=makeInput('number','0',set.dist); distI.step='50'; distI.min='0';
+    distI.addEventListener('change',e=>{wk.groups[gi].exercises[ei].sets[si].dist=e.target.value;saveData();});
 
-  row.appendChild(numDiv); row.appendChild(kgI); row.appendChild(repI);
-  row.appendChild(rpeI);   row.appendChild(delBtn);
+    const unitSel=document.createElement('select');
+    unitSel.className='set-input';
+    unitSel.style.cssText='font-size:12px;padding:4px 2px;text-align:center;background:var(--s2);border:1px solid var(--b2);border-radius:8px;color:var(--w);cursor:pointer';
+    ['m','km'].forEach(u=>{
+      const opt=document.createElement('option');
+      opt.value=u; opt.textContent=u;
+      if((set.distUnit||'m')===u) opt.selected=true;
+      unitSel.appendChild(opt);
+    });
+    unitSel.addEventListener('change',e=>{wk.groups[gi].exercises[ei].sets[si].distUnit=e.target.value;saveData();});
+
+    row.appendChild(numDiv); row.appendChild(distI); row.appendChild(unitSel);
+    row.appendChild(delBtn);
+  } else {
+    const kgI=makeInput('number','—',set.w);  kgI.step='0.5';
+    const repI=makeInput('number','—',set.r);
+    kgI.addEventListener('change',e=>{wk.groups[gi].exercises[ei].sets[si].w=e.target.value;saveData();});
+    repI.addEventListener('change',e=>{wk.groups[gi].exercises[ei].sets[si].r=e.target.value;saveData();});
+    row.appendChild(numDiv); row.appendChild(kgI); row.appendChild(repI);
+    row.appendChild(rpeI);   row.appendChild(delBtn);
+  }
 
   const extra=document.createElement('div');
   extra.style.cssText='grid-column:2/-2;display:flex;gap:6px;margin-top:2px;margin-bottom:4px';
@@ -1922,10 +2042,15 @@ function buildSetRow(gi,ei,si,set,wk){
   const restI=makeInput('number','Descanso (s)',set.rest,'flex:1;font-size:12px;padding:6px 8px');
   const noteI=makeInput('text','Nota...',set.note,'flex:2;font-size:12px;padding:6px 8px');
   restI.step='5';
-
   restI.addEventListener('change',e=>{wk.groups[gi].exercises[ei].sets[si].rest=e.target.value;saveData();});
   noteI.addEventListener('change',e=>{wk.groups[gi].exercises[ei].sets[si].note=e.target.value;saveData();});
 
+  if(isCardio){
+    const timeI=makeInput('text','hh:mm:ss',set.time,'flex:1;font-size:12px;padding:6px 8px');
+    timeI.placeholder='hh:mm:ss';
+    timeI.addEventListener('change',e=>{wk.groups[gi].exercises[ei].sets[si].time=e.target.value;saveData();});
+    extra.appendChild(timeI);
+  }
   extra.appendChild(restI); extra.appendChild(noteI);
   wrapper.appendChild(row); wrapper.appendChild(extra);
   return wrapper;
@@ -2034,6 +2159,137 @@ function deleteMeasurement(date){
 // ══════════════════════════════════════════════════
 // PROGRESS
 // ══════════════════════════════════════════════════
+
+// ── helpers ──
+function timeToSecs(t){
+  if(!t) return null;
+  const p=t.split(':').map(Number);
+  if(p.length===3) return p[0]*3600+p[1]*60+p[2];
+  if(p.length===2) return p[0]*60+p[1];
+  return null;
+}
+function fmtSecs(s){
+  if(s===null||isNaN(s)) return '—';
+  const h=Math.floor(s/3600), m=Math.floor((s%3600)/60), sec=s%60;
+  if(h>0) return `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+  return `${m}:${String(sec).padStart(2,'0')}`;
+}
+function distToM(dist,unit){
+  const d=parseFloat(dist)||0;
+  return unit==='km'?d*1000:d;
+}
+
+function renderCardioProgress(){
+  const exName = document.getElementById('cardio-select').value;
+  const area   = document.getElementById('cardio-progress-area');
+  if(!exName){ area.innerHTML=''; return; }
+
+  const isLong = exName.includes('Tirada larga');
+
+  // Collect sessions that have this exercise
+  const history = Object.entries(DB.workouts)
+    .filter(([,w])=>w.groups?.some(g=>g.exercises?.some(e=>e.name===exName)))
+    .sort(([a],[b])=>a.localeCompare(b))
+    .map(([d,w])=>{
+      const ex=w.groups.flatMap(g=>g.exercises||[]).find(e=>e.name===exName);
+      const sets=(ex?.sets||[]).filter(s=>s.dist||s.time);
+      return {d, sets};
+    }).filter(h=>h.sets.length>0);
+
+  if(!history.length){
+    area.innerHTML='<div class="card card-p"><p style="color:var(--mu);font-size:13px;text-align:center">Sin datos para esta actividad aún.</p></div>';
+    return;
+  }
+
+  if(isLong){
+    // Tirada larga: mostrar distancia total + tiempo total por sesión y tendencia
+    let html='<div class="card card-p" style="padding:0;overflow:hidden"><table style="width:100%;border-collapse:collapse">';
+    html+=`<thead><tr style="background:var(--s2)">
+      <th style="padding:9px 12px;font-size:9px;color:var(--mu);font-family:'Syne',sans-serif;letter-spacing:.5px;text-transform:uppercase;text-align:left">FECHA</th>
+      <th style="padding:9px 12px;font-size:9px;color:var(--mu);font-family:'Syne',sans-serif;letter-spacing:.5px;text-transform:uppercase;text-align:center">DISTANCIA</th>
+      <th style="padding:9px 12px;font-size:9px;color:var(--mu);font-family:'Syne',sans-serif;letter-spacing:.5px;text-transform:uppercase;text-align:center">TIEMPO</th>
+      <th style="padding:9px 12px;font-size:9px;color:var(--mu);font-family:'Syne',sans-serif;letter-spacing:.5px;text-transform:uppercase;text-align:center">RITMO</th>
+    </tr></thead><tbody>`;
+
+    const rows = [...history].reverse().slice(0,15).map((h,i,arr)=>{
+      const totalM   = h.sets.reduce((a,s)=>a+distToM(s.dist,s.distUnit||'m'),0);
+      const totalSec = h.sets.reduce((a,s)=>{ const t=timeToSecs(s.time); return t?a+t:a; },0);
+      const prev     = arr[i+1];
+      const prevM    = prev ? prev.sets.reduce((a,s)=>a+distToM(s.dist,s.distUnit||'m'),0) : null;
+      const deltaM   = prevM!==null ? totalM-prevM : null;
+      const distLabel= totalM>=1000 ? (totalM/1000).toFixed(2)+' km' : totalM+' m';
+      const deltaTxt = deltaM!==null ? (deltaM>=0?'<span style="color:var(--ac);font-size:10px;margin-left:3px">+'+( deltaM>=1000?(deltaM/1000).toFixed(2)+'km':Math.round(deltaM)+'m' )+'</span>':'<span style="color:var(--re);font-size:10px;margin-left:3px">'+( deltaM<=-1000?(deltaM/1000).toFixed(2)+'km':Math.round(deltaM)+'m' )+'</span>') : '';
+      const ritmo    = totalM>0&&totalSec>0 ? fmtSecs(Math.round(totalSec/(totalM/1000)))+'/km' : '—';
+      return `<tr style="border-bottom:1px solid var(--b)">
+        <td style="padding:9px 12px;font-size:13px;color:var(--w);font-family:'Syne',sans-serif;font-weight:600">${fmtDateShort(h.d)}</td>
+        <td style="padding:9px 12px;text-align:center"><span style="font-size:14px;font-weight:800;color:var(--w);font-family:'Syne',sans-serif">${distLabel}</span>${deltaTxt}</td>
+        <td style="padding:9px 12px;text-align:center;font-size:13px;color:var(--mu);font-family:'Syne',sans-serif">${totalSec?fmtSecs(totalSec):'—'}</td>
+        <td style="padding:9px 12px;text-align:center;font-size:12px;color:var(--bl);font-family:'Syne',sans-serif;font-weight:700">${ritmo}</td>
+      </tr>`;
+    });
+    html+=rows.join('')+'</tbody></table></div>';
+    area.innerHTML=html;
+
+  } else {
+    // Series: agrupar por distancia, comparar tiempo entre sesiones
+    // Recoger todas las distancias únicas usadas
+    const allDistKeys = [...new Set(
+      history.flatMap(h=>h.sets.map(s=>distToM(s.dist,s.distUnit||'m')+':'+s.distUnit))
+    )].filter(k=>!k.startsWith('0:'));
+
+    if(!allDistKeys.length){
+      area.innerHTML='<div class="card card-p"><p style="color:var(--mu);font-size:13px;text-align:center">Añade distancias para ver la progresión.</p></div>';
+      return;
+    }
+
+    let html='';
+    allDistKeys.forEach(dk=>{
+      const [dm, du] = dk.split(':');
+      const dmNum = parseFloat(dm);
+      const label  = dmNum>=1000 ? (dmNum/1000).toFixed(2)+' km' : dmNum+' m';
+
+      // Sessions that have at least one set with this distance
+      const sessWithDist = history.map(h=>({
+        d: h.d,
+        sets: h.sets.filter(s=>distToM(s.dist,s.distUnit||'m')===dmNum && s.time)
+      })).filter(h=>h.sets.length>0);
+
+      if(!sessWithDist.length) return;
+
+      html+=`<div class="section-title" style="margin-top:12px">Series de ${label}</div>`;
+      html+='<div class="card card-p" style="padding:0;overflow:hidden"><table style="width:100%;border-collapse:collapse">';
+      html+=`<thead><tr style="background:var(--s2)">
+        <th style="padding:9px 12px;font-size:9px;color:var(--mu);font-family:'Syne',sans-serif;letter-spacing:.5px;text-transform:uppercase;text-align:left">FECHA</th>
+        <th style="padding:9px 12px;font-size:9px;color:var(--mu);font-family:'Syne',sans-serif;letter-spacing:.5px;text-transform:uppercase;text-align:center">Nº SERIES</th>
+        <th style="padding:9px 12px;font-size:9px;color:var(--mu);font-family:'Syne',sans-serif;letter-spacing:.5px;text-transform:uppercase;text-align:center">MEJOR TIEMPO</th>
+        <th style="padding:9px 12px;font-size:9px;color:var(--mu);font-family:'Syne',sans-serif;letter-spacing:.5px;text-transform:uppercase;text-align:center">MEJORA</th>
+      </tr></thead><tbody>`;
+
+      [...sessWithDist].reverse().slice(0,15).forEach((h,i,arr)=>{
+        const times  = h.sets.map(s=>timeToSecs(s.time)).filter(t=>t!==null);
+        const best   = times.length ? Math.min(...times) : null;
+        const prev   = arr[i+1];
+        const prevTimes = prev ? prev.sets.map(s=>timeToSecs(s.time)).filter(t=>t!==null) : [];
+        const prevBest  = prevTimes.length ? Math.min(...prevTimes) : null;
+        const delta  = best!==null&&prevBest!==null ? prevBest-best : null; // positive = mejora
+        const deltaTxt = delta!==null
+          ? (delta>0?`<span style="color:var(--ac);font-weight:700">-${fmtSecs(delta)}</span>`
+            :delta<0?`<span style="color:var(--re);font-weight:700">+${fmtSecs(-delta)}</span>`
+            :`<span style="color:var(--mu)">= igual</span>`)
+          : '<span style="color:var(--mu)">—</span>';
+        html+=`<tr style="border-bottom:1px solid var(--b)">
+          <td style="padding:9px 12px;font-size:13px;color:var(--w);font-family:'Syne',sans-serif;font-weight:600">${fmtDateShort(h.d)}</td>
+          <td style="padding:9px 12px;text-align:center;font-size:13px;color:var(--mu)">${h.sets.length}</td>
+          <td style="padding:9px 12px;text-align:center;font-size:14px;font-weight:800;color:var(--w);font-family:'Syne',sans-serif">${best!==null?fmtSecs(best):'—'}</td>
+          <td style="padding:9px 12px;text-align:center;font-size:13px;font-family:'Syne',sans-serif">${deltaTxt}</td>
+        </tr>`;
+      });
+      html+='</tbody></table></div>';
+    });
+    area.innerHTML=html || '<div class="card card-p"><p style="color:var(--mu);font-size:13px;text-align:center">Sin series con tiempo registrado.</p></div>';
+  }
+}
+
 function renderProgress(){
   const today=todayStr();
   const start=DB.settings.startDate||today;
